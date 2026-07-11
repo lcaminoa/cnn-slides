@@ -36,7 +36,11 @@
   /* ── Escenario ── */
   main{flex:1;display:flex;align-items:center;justify-content:center;
        padding:10px 6vw 0;min-height:0;overflow:hidden;}
-  .stage{display:flex;align-items:center;justify-content:center;gap:56px;flex-wrap:wrap;}
+  /* Ancho de diseño fijo (como en la compu): el layout es idéntico en toda
+     pantalla; luego fitStage() lo escala parejo para que entre. flex:none evita
+     que el contenedor lo encoja y reacomode. */
+  .stage{display:flex;align-items:center;justify-content:center;gap:56px;flex-wrap:wrap;
+         width:1300px;flex:none;}
 
   /* Grillas */
   .gridwrap{position:relative;}
