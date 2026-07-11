@@ -321,7 +321,7 @@ function renderKernel(){
   stage.innerHTML='';
   stage.appendChild(labeled(makeGrid(INPUT,{color:'gray'}),'Imagen'));
   const mid=el('div');mid.style.display='flex';mid.style.alignItems='center';mid.style.gap='16px';
-  mid.appendChild(el('div','opsign','✳'));
+  mid.appendChild(el('div','opsign','∗'));
   mid.appendChild(labeled(makeGrid(KERNEL,{color:'kernel'}),'Filtro 3×3 (detector de borde)'));
   stage.appendChild(mid);
 }
