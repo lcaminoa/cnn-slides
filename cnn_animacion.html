@@ -121,6 +121,18 @@
   .hint{position:fixed;bottom:8px;right:14px;font-size:12px;color:var(--muted);opacity:.7;}
   .progress{position:fixed;top:0;left:0;height:3px;background:var(--blue);
             transition:width .3s ease;z-index:10;}
+
+  /* La escena se auto-escala por JS; el origen centrado la mantiene visible */
+  .stage{transform-origin:center center;}
+
+  /* Pantallas chicas (iPad, tablets): menos padding y títulos algo más chicos */
+  @media (max-width:1100px){
+    header{padding:18px 4vw 6px;}
+    h1.caption{font-size:26px;}
+    p.explain{font-size:17px;margin-top:8px;}
+    main{padding:6px 2vw 0;}
+    footer{padding:10px 0 16px;}
+  }
 </style>
 </head>
 <body>
@@ -536,6 +548,17 @@ function renderHero(kind){
 // ─────────────────────────────────────────────────────────────
 //  Motor de navegación
 // ─────────────────────────────────────────────────────────────
+function fitStage(){
+  const m=document.querySelector('main');
+  stage.style.transform='none';
+  const cs=getComputedStyle(m);
+  const availW=m.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH=m.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const sw=stage.scrollWidth, sh=stage.scrollHeight;
+  if(!sw||!sh) return;
+  const scale=Math.min(availW/sw, availH/sh, 1);
+  if(scale<0.999) stage.style.transform='scale('+scale+')';
+}
 let idx=0, prevKind=null;
 function render(){
   const step=steps[idx];
@@ -572,6 +595,7 @@ function render(){
   }
   prevKind=step.kind;
   if(history.replaceState) history.replaceState(null,'','#'+idx);
+  fitStage();
 }
 function go(d){const n=idx+d;if(n>=0&&n<steps.length){idx=n;render();}}
 
@@ -585,6 +609,8 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='End'){idx=steps.length-1;render();}
 });
 document.querySelector('main').addEventListener('click',()=>go(1));
+window.addEventListener('resize',fitStage);
+window.addEventListener('orientationchange',()=>setTimeout(fitStage,200));
 
 // arranque (permite #n para saltar a un paso)
 const h=parseInt(location.hash.replace('#',''));
