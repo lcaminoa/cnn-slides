@@ -213,7 +213,7 @@ function captionFor(step){
     case 'filters': return ['6 · Muchos filtros a la vez','Cada filtro detecta algo distinto','Una capa tiene decenas de filtros: bordes, texturas, colores. Cada uno da su propio mapa, y <b>la red aprende sola cuáles le convienen</b>.'];
     case 'pool': return ['7 · ReLU + pooling','Se limpia y se achica el mapa','<b>ReLU</b> descarta lo negativo (deja solo lo positivo), y el <b>max pooling</b> resume cada ventana 2×2 en su máximo: el mapa se achica a la mitad.'];
     case 'hierarchy': return ['8 · Apilar capas','De bordes simples a estructuras complejas','Apilando bloques, la red arma una <b>jerarquía</b>: las primeras capas ven bordes y texturas; las profundas, formas y objetos.'];
-    case 'pipeline': return ['9 · El pipeline completo','Así fluye una imagen por nuestra CNN','Cuatro bloques (conv + ReLU + pooling) achican el espacio y suman profundidad. Gracias a los <b>pesos compartidos</b> y a mirar de a vecindades, le gana al MLP. Al final, una capa densa: <b>real o IA</b>.'];
+    case 'pipeline': return ['9 · El pipeline completo','Así fluye una imagen por nuestra CNN','Los bloques conv extraen features cada vez más ricas —con <b>pesos compartidos</b> y localidad, por eso le ganan al MLP sobre píxeles crudos. Al final, esas features se aplanan y las clasifica un <b>MLP</b>: <b>real o IA</b>.'];
     case 'resnet': return ['10 · ResNet50','Una CNN muy profunda, ya entrenada','Partimos de <b>ResNet50</b>: 50 capas preentrenadas en ImageNet (1,2M imágenes), que ya sabe ver bordes, texturas y formas. Sus <b>conexiones residuales</b> (x + F(x)) permiten tanta profundidad sin que el gradiente se desvanezca.'];
     case 'fe': return ['11 · Feature Extraction','Congelamos todo y entrenamos solo la salida','Congelamos <b>toda</b> ResNet50 y entrenamos solo la capa final: <b>2.049 parámetros</b>. Rápido, y ya da 88 %.'];
     case 'ft': return ['12 · Fine-Tuning','Descongelamos el último bloque para especializarlo','Descongelamos también <b>layer4</b> (~15M parámetros) para adaptar los features de alto nivel a los artefactos de la IA. <b>Nuestro mejor modelo: 93,4 %.</b>'];
@@ -415,12 +415,16 @@ function renderPipeline(){
     ['Flatten','50.176 valores',''],
     ['Densa','512 → 1',''],
   ];
-  blocks.forEach(b=>{pipe.appendChild(el('div','arrow','→'));const d=el('div','block '+b[2]);d.innerHTML='<div class="bt">'+b[0]+'</div><div class="bs">'+b[1]+'</div>';d.style.minWidth='108px';d.style.minHeight='72px';pipe.appendChild(d);});
+  blocks.forEach(b=>{pipe.appendChild(el('div','arrow','→'));const d=el('div','block '+b[2]);d.innerHTML='<div class="bt">'+b[0]+'</div><div class="bs">'+b[1]+'</div>';d.style.minWidth='108px';d.style.minHeight='72px';if(b[2]===''){d.style.background='#fff4e6';d.style.borderColor='#ffd8a8';}pipe.appendChild(d);});
   pipe.appendChild(el('div','arrow','→'));
   const verd=el('div','block');verd.style.minWidth='150px';
   verd.innerHTML='<div class="verdict">σ → IA</div><div class="probbar"><div class="probfill" id="pf"></div></div><div class="bs" style="margin-top:8px">p = 0,93</div>';
   pipe.appendChild(verd);
-  stage.appendChild(pipe);
+  const note=el('div');note.style.cssText='width:100%;text-align:center;margin-top:24px;font-size:16px;color:var(--muted);';
+  note.innerHTML='El tramo final <b style="color:var(--fg)">Flatten → Densa es un MLP</b> (el mismo de la slide 3), pero ahora clasifica las <b style="color:var(--fg)">features que aprendió</b> la CNN, no los píxeles crudos.';
+  const col=el('div');col.style.display='flex';col.style.flexDirection='column';col.style.alignItems='center';
+  col.appendChild(pipe);col.appendChild(note);
+  stage.appendChild(col);
   const items=pipe.querySelectorAll('.block');
   items.forEach((b,i)=>setTimeout(()=>{b.classList.add('show');if(i===items.length-1){const pf=document.getElementById('pf');if(pf)pf.style.width='93%';}},200+i*260));
 }
