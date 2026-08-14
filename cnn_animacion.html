@@ -41,6 +41,9 @@
      que el contenedor lo encoja y reacomode. */
   .stage{display:flex;align-items:center;justify-content:center;gap:56px;flex-wrap:wrap;
          width:1300px;flex:none;}
+  /* La slide de convolución es más ancha: la imagen lleva el borde de padding
+     (7×7) y el mapa de salida es 5×5. fitStage() la escala para que entre. */
+  .stage.wide{width:1460px;}
 
   /* Grillas */
   .gridwrap{position:relative;}
@@ -58,6 +61,12 @@
   .cell.hidden{opacity:0;transform:scale(.6);}
   .cell.pop{animation:pop .35s ease;}
   @keyframes pop{0%{transform:scale(.5);opacity:0;}60%{transform:scale(1.12);}100%{transform:scale(1);opacity:1;}}
+  /* Celdas del borde de ceros (padding=1) y celdas del mapa que lo tocaron */
+  .cell.padcell{background:#fbfbfd;border-style:dashed;border-color:#d8d8de;
+                color:#b4b4bd;font-weight:500;}
+  .cell.edgecell{border-style:dashed;border-color:#c9d9ea;}
+  .legend{font-size:13px;color:var(--muted);text-align:center;margin-top:10px;
+          line-height:1.35;max-width:300px;}
 
   /* Overlay del filtro que se desliza */
   .koverlay{
@@ -166,11 +175,20 @@ const INPUT = [
   [1,2,5,8,9],
 ];
 const KERNEL = [[-1,0,1],[-1,0,1],[-1,0,1]]; // detector de borde vertical
-const N = 5, K = 3, OUT = N - K + 1;          // salida 3×3
+const N = 5, K = 3, PAD = 1;                  // PAD=1 ← nn.Conv2d(..., kernel_size=3, padding=1)
+const PN = N + 2*PAD;                         // imagen con el borde de ceros: 7×7
+const OUT = PN - K + 1;                       // salida 5×5 = MISMO tamaño que la imagen
+
+// Imagen rodeada por un borde de ceros, igual que hace PyTorch con padding=1.
+const PADDED = Array.from({length:PN},(_,i)=>Array.from({length:PN},(_,j)=>
+  isPad(i,j) ? 0 : INPUT[i-PAD][j-PAD]));
+function isPad(i,j){return i<PAD||j<PAD||i>=PN-PAD||j>=PN-PAD;}
+// Celda del mapa cuyo cálculo tocó el padding: su valor está inflado por el relleno.
+function isEdge(r,c){return r===0||c===0||r===OUT-1||c===OUT-1;}
 
 function convVal(r,c){
   let s=0;
-  for(let i=0;i<K;i++) for(let j=0;j<K;j++) s += KERNEL[i][j]*INPUT[r+i][c+j];
+  for(let i=0;i<K;i++) for(let j=0;j<K;j++) s += KERNEL[i][j]*PADDED[r+i][c+j];
   return s;
 }
 const OUTVALS=[]; let OUTMAX=0;
@@ -184,7 +202,12 @@ steps.push({kind:'title'});
 steps.push({kind:'pixels'});
 steps.push({kind:'mlp'});
 steps.push({kind:'kernel'});
-for(let k=0;k<OUT*OUT;k++) steps.push({kind:'conv',k});
+// La salida es 5×5 = 25 posiciones. En vez de un paso por posición, tres pasos
+// manuales (donde se ve el filtro apoyado sobre el padding), uno que barre hasta
+// el centro y uno que completa el mapa.
+[0,1,2].forEach(k=>steps.push({kind:'conv',k}));
+steps.push({kind:'conv',k:12,sweep:true});
+steps.push({kind:'conv',k:OUT*OUT-1,sweep:true});
 steps.push({kind:'convdone'});
 steps.push({kind:'filters'});
 steps.push({kind:'pool'});
@@ -205,11 +228,12 @@ function captionFor(step){
     case 'kernel': return ['3 · El filtro','Un filtro es una ventana de pesos que busca un patrón','Este filtro 3×3 es un <b>detector de bordes verticales</b>: resta la izquierda de la derecha. Se desliza por toda la imagen.'];
     case 'conv':{
       const r=Math.floor(step.k/OUT), c=step.k%OUT;
-      if(step.k===0) return ['4 · La convolución','El filtro se apoya sobre una región y calcula un número','Multiplica cada peso por el píxel de abajo y <b>suma todo</b>. El resultado va a la primera celda del mapa.'];
-      if(step.k===OUT*OUT-1) return ['4 · La convolución','…y así hasta cubrir toda la imagen','Barrió todas las posiciones con <b>los mismos pesos</b> (pesos compartidos) y armó el mapa completo.'];
+      if(step.k===0) return ['4 · La convolución','Primero rodeamos la imagen con un borde de ceros','Nuestra CNN usa <b>padding=1</b>: agrega un marco de ceros para que el filtro también pueda centrarse en los píxeles del borde. Acá la ventana ya se apoya sobre él: multiplica cada peso por el píxel de abajo y <b>suma todo</b>.'];
+      if(step.k===OUT*OUT-1) return ['4 · La convolución','…y así hasta cubrir toda la imagen','Barrió las 25 posiciones con <b>los mismos pesos</b> (pesos compartidos). Gracias al padding el mapa quedó de <b>5×5, igual que la imagen</b>: la convolución no achica.'];
+      if(step.sweep) return ['4 · La convolución','Sigue barriendo, fila por fila','Misma operación en cada posición, hasta el centro de la imagen (fila '+(r+1)+', col '+(c+1)+'). Sin el padding no existirían las posiciones del borde y el mapa saldría más chico.'];
       return ['4 · La convolución','Se desliza a la siguiente posición y repite','Cada posición da una celda del <b>mapa de activación</b> (fila '+(r+1)+', col '+(c+1)+').'];
     }
-    case 'convdone': return ['5 · El mapa de activación','El resultado dice DÓNDE aparece el patrón','La columna central es la más intensa: ahí está el borde. Valores altos = <b>acá hay un borde vertical</b>.'];
+    case 'convdone': return ['5 · El mapa de activación','El resultado dice DÓNDE aparece el patrón','La <b>columna central</b> es la más intensa dentro de la imagen: ahí está el borde. En el anillo punteado el filtro pisó el padding: resta el <b>0</b> del relleno contra el píxel de al lado y marca un salto que <b>no existe</b> en la foto. Es el precio de conservar el tamaño.'];
     case 'filters': return ['6 · Muchos filtros a la vez','Cada filtro detecta algo distinto','Una capa tiene decenas de filtros: bordes, texturas, colores. Cada uno da su propio mapa, y <b>la red aprende sola cuáles le convienen</b>.'];
     case 'pool': return ['7 · ReLU + pooling','Se limpia y se achica el mapa','<b>ReLU</b> descarta lo negativo (deja solo lo positivo), y el <b>max pooling</b> resume cada ventana 2×2 en su máximo: el mapa se achica a la mitad.'];
     case 'hierarchy': return ['8 · Apilar capas','De bordes simples a estructuras complejas','Apilando bloques, la red arma una <b>jerarquía</b>: las primeras capas ven bordes y texturas; las profundas, formas y objetos.'];
@@ -230,10 +254,12 @@ const CELL=56, GAP=6, STRIDE=CELL+GAP;
 
 function grayBg(v){const t=v/9;const g=Math.round(255-t*205);return `rgb(${g},${g},${g})`;}
 function grayFg(v){return v/9>0.6?'#fff':'#111';}
-function blueBg(v){const a=Math.abs(v)/OUTMAX*0.9;return `rgba(28,126,214,${a})`;}
-function blueFg(v){return Math.abs(v)/OUTMAX>0.5?'#fff':'#111';}
+// Las celdas del mapa que tocaron el padding se pintan al 45 % para que el
+// artefacto del borde no tape visualmente al borde real del centro.
+function blueBg(v,soft){const a=Math.abs(v)/OUTMAX*0.9*(soft?0.45:1);return `rgba(28,126,214,${a})`;}
+function blueFg(v,soft){return !soft&&Math.abs(v)/OUTMAX>0.5?'#fff':'#111';}
 
-function makeGrid(vals,{cls='',color='gray'}={}){
+function makeGrid(vals,{cls='',color='gray',padRing=false}={}){
   const wrap=document.createElement('div');wrap.className='gridwrap';
   const g=document.createElement('div');g.className='grid '+cls;
   const cols=vals[0].length;
@@ -241,7 +267,8 @@ function makeGrid(vals,{cls='',color='gray'}={}){
   vals.forEach((row,r)=>row.forEach((v,c)=>{
     const cell=document.createElement('div');cell.className='cell';
     cell.dataset.r=r;cell.dataset.c=c;cell.textContent=v;
-    if(color==='gray'){cell.style.background=grayBg(v);cell.style.color=grayFg(v);}
+    if(padRing&&isPad(r,c)) cell.classList.add('padcell');
+    if(color==='gray'&&!cell.classList.contains('padcell')){cell.style.background=grayBg(v);cell.style.color=grayFg(v);}
     else if(color==='kernel'){
       if(v>0){cell.style.background='#eaf3fe';cell.style.borderColor='#bcdcfb';cell.style.color='var(--blue)';}
       else if(v<0){cell.style.background='#fdeee0';cell.style.borderColor='#f6d3ac';cell.style.color='#c76b00';}
@@ -264,7 +291,7 @@ function arrow(){return el('div','arrow','→');}
 let conv={built:false,inputWrap:null,outWrap:null,overlay:null,calc:null};
 function buildConv(){
   stage.innerHTML='';
-  const inWrap=makeGrid(INPUT,{color:'gray'});
+  const inWrap=makeGrid(PADDED,{color:'gray',padRing:true});
   const overlay=el('div','koverlay');
   overlay.style.width=(K*CELL+(K-1)*GAP)+'px';
   overlay.style.height=(K*CELL+(K-1)*GAP)+'px';
@@ -272,16 +299,21 @@ function buildConv(){
 
   const empty=OUTVALS.map(row=>row.map(_=>''));
   const outWrap=makeGrid(empty,{color:'blue'});
-  outWrap.querySelectorAll('.cell').forEach(c=>{c.classList.add('hidden');c.style.background='#fff';});
+  outWrap.querySelectorAll('.cell').forEach(c=>{
+    c.classList.add('hidden');c.style.background='#fff';
+    if(isEdge(+c.dataset.r,+c.dataset.c)) c.classList.add('edgecell');
+  });
 
   const calc=el('div','calc');
 
-  stage.appendChild(labeled(inWrap,'Imagen (5×5)'));
+  stage.appendChild(labeled(inWrap,'Imagen 5×5 <span style="color:#b4b4bd">+ borde de ceros (padding=1)</span>'));
   const mid=el('div');mid.style.display='flex';mid.style.flexDirection='column';mid.style.alignItems='center';mid.style.gap='10px';
   mid.appendChild(labeled(makeGrid(KERNEL,{color:'kernel'}),'Filtro'));
   stage.appendChild(mid);
   stage.appendChild(arrow());
-  stage.appendChild(labeled(outWrap,'Mapa de activación (3×3)'));
+  const outBox=labeled(outWrap,'Mapa de activación (5×5)');
+  outBox.appendChild(el('div','legend','El anillo <b style="color:#8a8a93">punteado</b> son las celdas donde el filtro tocó el padding.'));
+  stage.appendChild(outBox);
   stage.appendChild(calc);
 
   conv={built:true,inputCells:inWrap.querySelectorAll('.cell'),outCells:outWrap.querySelectorAll('.cell'),overlay,calc};
@@ -298,18 +330,35 @@ function updateConv(k){
   });
   // revelar celdas de salida hasta k
   conv.outCells.forEach((cell,idx)=>{
-    const cr=Math.floor(idx/OUT), cc=idx%OUT, v=OUTVALS[cr][cc];
+    const cr=Math.floor(idx/OUT), cc=idx%OUT, v=OUTVALS[cr][cc], soft=isEdge(cr,cc);
     if(idx<=k){
       if(cell.classList.contains('hidden')){cell.classList.remove('hidden');cell.classList.add('pop');}
-      cell.textContent=v;cell.style.background=blueBg(v);cell.style.color=blueFg(v);
+      cell.textContent=v;cell.style.background=blueBg(v,soft);cell.style.color=blueFg(v,soft);
     }else{
       cell.classList.add('hidden');cell.textContent='';cell.style.background='#fff';
     }
   });
-  // panel de cálculo
+  // panel de cálculo (los términos que salen del padding van en gris)
   let terms=[];
-  for(let i=0;i<K;i++)for(let j=0;j<K;j++){const w=KERNEL[i][j];if(w!==0)terms.push(`(${w>0?'+':''}${w})·${INPUT[r+i][c+j]}`);}
+  for(let i=0;i<K;i++)for(let j=0;j<K;j++){
+    const w=KERNEL[i][j];if(w===0)continue;
+    const t=`(${w>0?'+':''}${w})·${PADDED[r+i][c+j]}`;
+    terms.push(isPad(r+i,c+j)?`<span style="color:#b4b4bd">${t}</span>`:t);
+  }
   conv.calc.innerHTML=`posición fila ${r+1}, col ${c+1}<br>Σ pesos × píxeles:<br><span style="font-size:15px">${terms.join(' ')}</span><div class="big blue">= ${OUTVALS[r][c]}</div>`;
+}
+
+// Barrido: avanza posición por posición desde `from` hasta `to` sin clicks.
+let sweepTimer=null;
+function stopSweep(){if(sweepTimer){clearInterval(sweepTimer);sweepTimer=null;}}
+function runSweep(from,to){
+  stopSweep();
+  let k=from;
+  updateConv(k);
+  sweepTimer=setInterval(()=>{
+    if(k>=to){stopSweep();return;}
+    updateConv(++k);
+  },70);
 }
 
 // ── Otros escenarios ──
@@ -329,7 +378,7 @@ function renderConvDone(){
   buildConv();updateConv(OUT*OUT-1);
   conv.overlay.style.opacity='0';
   conv.inputCells.forEach(c=>{c.classList.remove('win','dim');});
-  conv.calc.innerHTML='Mapa completo.<br>Los valores altos marcan<br>el <b style="color:var(--blue)">borde vertical</b>.';
+  conv.calc.innerHTML='Mapa completo: <b>5×5</b>,<br>del mismo tamaño que la imagen.<br><br>La columna del medio marca<br>el <b style="color:var(--blue)">borde vertical</b>.<br><br><span style="font-size:14px">El anillo punteado está inflado<br>por el padding: ahí no hay borde.</span>';
 }
 function renderFilters(){
   stage.innerHTML='';
@@ -346,7 +395,7 @@ function renderFilters(){
   maps.appendChild(el('div','arrow','→'));
   defs.forEach((d,i)=>{
     const vals=[],mx={m:0};
-    for(let r=0;r<OUT;r++){vals[r]=[];for(let c=0;c<OUT;c++){let s=0;for(let a=0;a<K;a++)for(let b=0;b<K;b++)s+=d.k[a][b]*INPUT[r+a][c+b];vals[r][c]=s;mx.m=Math.max(mx.m,Math.abs(s));}}
+    for(let r=0;r<OUT;r++){vals[r]=[];for(let c=0;c<OUT;c++){let s=0;for(let a=0;a<K;a++)for(let b=0;b<K;b++)s+=d.k[a][b]*PADDED[r+a][c+b];vals[r][c]=s;mx.m=Math.max(mx.m,Math.abs(s));}}
     const g=makeGrid(vals.map(row=>row.map(v=>v)),{color:'blue'});
     g.querySelectorAll('.cell').forEach((cell,idx)=>{const v=vals[Math.floor(idx/OUT)][idx%OUT];const a=(mx.m?Math.abs(v)/mx.m:0)*0.9;cell.style.background=`rgba(28,126,214,${a})`;cell.style.color=a>0.5?'#fff':'#111';});
     const col=el('div','mapcol');col.appendChild(labeled(g,d.name));
@@ -567,8 +616,9 @@ function fitStage(){
   const scale=Math.min(availW/sw, availH/sh, 1);
   if(scale<0.999) stage.style.transform='scale('+scale+')';
 }
-let idx=0, prevKind=null;
+let idx=0, prevKind=null, lastConvK=null;
 function render(){
+  stopSweep();
   const step=steps[idx];
   const [chip,title,body]=captionFor(step);
   document.getElementById('chip').textContent=chip;
@@ -579,9 +629,14 @@ function render(){
   document.getElementById('prev').disabled=(idx===0);
   document.getElementById('next').disabled=(idx===steps.length-1);
 
+  // La convolución (con padding) necesita más ancho que el resto de las slides.
+  stage.classList.toggle('wide', step.kind==='conv'||step.kind==='convdone');
+
   if(step.kind==='conv'){
-    if(prevKind!=='conv'||!conv.built) buildConv();
-    updateConv(step.k);
+    if(prevKind!=='conv'||!conv.built){buildConv();updateConv(step.k);}
+    else if(step.sweep&&lastConvK!=null&&step.k>lastConvK+1) runSweep(lastConvK+1,step.k);
+    else updateConv(step.k);
+    lastConvK=step.k;
   }else{
     conv.built=false;
     switch(step.kind){
