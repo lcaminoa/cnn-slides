@@ -2,8 +2,17 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=cnn_animacion.html">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CNN — apoyo visual</title>
+<!-- Redirige a la presentación agregándole una versión distinta en cada carga
+     (?v=<timestamp>). Como la URL cambia, el navegador no puede servir una copia
+     vieja del caché: siempre baja la última versión publicada. Sin esto, GitHub
+     Pages manda cache-control: max-age=600 y la congela 10 minutos.
+     El location.hash se conserva para que index.html#7 siga abriendo el paso 7. -->
+<script>
+  location.replace('cnn_animacion.html?v=' + Date.now() + location.hash);
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=cnn_animacion.html"></noscript>
 </head>
 <body>
 <p>Abriendo la presentación… <a href="cnn_animacion.html">Ir a la presentación</a></p>

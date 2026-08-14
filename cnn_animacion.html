@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- GitHub Pages sirve este archivo con cache-control: max-age=600, así que el
+     navegador se guarda una copia 10 minutos y no ve los cambios recién subidos.
+     Estas meta ayudan, pero el que realmente lo evita es el ?v= que agrega
+     index.html en cada carga. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Cómo funciona una CNN — apoyo visual</title>
 <style>
   :root{
